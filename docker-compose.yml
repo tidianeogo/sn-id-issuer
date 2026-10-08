@@ -75,6 +75,8 @@ services:
       WALLET_CLIENT_ID: ${WALLET_CLIENT_ID}
       WALLET_REDIRECT_URIS: ${WALLET_REDIRECT_URIS}
       TEST_CLIENT_SECRET: ${TEST_CLIENT_SECRET}
+      PUBLIC_URL: ${PUBLIC_URL}
+      ISSUER_BACKEND_SECRET: ${ISSUER_BACKEND_SECRET:-}
       ISSUER_ADMIN_PASSWORD: ${ISSUER_ADMIN_PASSWORD}
       CITIZEN_USERNAME: ${CITIZEN_USERNAME}
       CITIZEN_PASSWORD: ${CITIZEN_PASSWORD}
@@ -98,6 +100,10 @@ services:
       IDENTITY_CLAIM: preferred_username
       CREDENTIAL_SCOPE: sn_national_id_vc
       REQUIRE_NONCE: ${REQUIRE_NONCE}   # garder false : Keycloak ne renvoie pas de c_nonce (Mimoto, Inji Wallet)
+      # module d'enrôlement (/admin/) : comptes Keycloak des titulaires via le compte de service issuer-backend
+      REALM: ${REALM}
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080/auth
+      ISSUER_BACKEND_SECRET: ${ISSUER_BACKEND_SECRET:-}
     depends_on:
       postgres: {condition: service_healthy}
       keycloak: {condition: service_healthy}
@@ -125,7 +131,7 @@ services:
   tunnel-ngrok:
     profiles: [ngrok]
     image: ngrok/ngrok:3
-    command: http gateway:80 --url=${NGROK_DOMAIN:-} --log stdout
+    command: http gateway:80 --url=https://${NGROK_DOMAIN:-} --log stdout
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
     restart: unless-stopped

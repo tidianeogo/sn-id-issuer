@@ -6,15 +6,15 @@
       "protocol": "OpenId4VCI",
       "display": [
         {
-          "name": "Carte d'identité CEDEAO – Sénégal (démo)",
-          "logo": { "url": "http://localhost:8088/static/logo.png", "alt_text": "Sénégal" },
-          "title": "Carte d'identité CEDEAO",
-          "description": "Téléchargez votre carte d'identité numérique",
+          "name": "Carte d'identit\u00e9 CEDEAO \u2013 S\u00e9n\u00e9gal (d\u00e9mo)",
+          "logo": { "url": "https://oasis-ninja-uncertain.ngrok-free.dev/static/logo.png", "alt_text": "S\u00e9n\u00e9gal" },
+          "title": "Carte d'identit\u00e9 CEDEAO",
+          "description": "T\u00e9l\u00e9chargez votre carte d'identit\u00e9 num\u00e9rique",
           "language": "fr"
         },
         {
-          "name": "ECOWAS Identity Card – Senegal (demo)",
-          "logo": { "url": "http://localhost:8088/static/logo.png", "alt_text": "Senegal" },
+          "name": "ECOWAS Identity Card \u2013 Senegal (demo)",
+          "logo": { "url": "https://oasis-ninja-uncertain.ngrok-free.dev/static/logo.png", "alt_text": "Senegal" },
           "title": "ECOWAS Identity Card",
           "description": "Download your digital identity card",
           "language": "en"
@@ -22,12 +22,12 @@
       ],
       "client_id": "inji-mimoto",
       "client_alias": "sn-cni-mimoto-client",
-      "wellknown_endpoint": "http://localhost:8088/.well-known/openid-credential-issuer",
-      "credential_issuer_host": "http://localhost:8088",
+      "wellknown_endpoint": "https://oasis-ninja-uncertain.ngrok-free.dev/.well-known/openid-credential-issuer",
+      "credential_issuer_host": "https://oasis-ninja-uncertain.ngrok-free.dev",
       "redirect_uri": "io.mosip.residentapp.inji://oauthredirect",
-      "authorization_audience": "http://localhost:8088/auth/realms/senegal/protocol/openid-connect/token",
-      "proxy_token_endpoint": "http://localhost:8088/auth/realms/senegal/protocol/openid-connect/token",
-      "token_endpoint": "http://localhost:8088/v1/mimoto/get-token/SenegalCNI",
+      "authorization_audience": "https://oasis-ninja-uncertain.ngrok-free.dev/auth/realms/senegal/protocol/openid-connect/token",
+      "proxy_token_endpoint": "https://oasis-ninja-uncertain.ngrok-free.dev/auth/realms/senegal/protocol/openid-connect/token",
+      "token_endpoint": "https://oasis-ninja-uncertain.ngrok-free.dev/v1/mimoto/get-token/SenegalCNI",
       "qr_code_type": "OnlineSharing",
       "enabled": "true"
     }

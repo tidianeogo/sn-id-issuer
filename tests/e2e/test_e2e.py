@@ -345,10 +345,9 @@ def test_enrolement_nouveau_citoyen_puis_emission(admin_token, mimoto, tmp_path)
     mrz = _mrz_for("29920000101000427", "000101", "F", "340114", "DIOP", "AWA")
     r = _adm("PUT", "/admin/citizens", admin_token, json={**FICTIF, "mrz": mrz})
     assert r.status_code == 200, r.text
-    kc_admin("POST", "/users", json={"username": FICTIF["nin"], "enabled": True, "firstName": "AWA",
-                                     "lastName": "DIOP", "email": "awa.diop@test.local", "emailVerified": True,
-                                     "credentials": [{"type": "password", "value": "Awa#2026", "temporary": False}]})
-    code, verifier, page = mimoto.authorize(FICTIF["nin"], "Awa#2026")
+    acc = r.json()["account"]   # compte Keycloak créé par l'issuer (identifiant = NIN, mot de passe temporaire)
+    assert acc["created"] is True and acc["username"] == FICTIF["nin"] and acc["temporary_password"]
+    code, verifier, page = mimoto.authorize(FICTIF["nin"], acc["temporary_password"], new_password="Awa#2026")
     assert code, page[:300]
     tok = mimoto.token(code, verifier).json()["access_token"]
     vc = credential_request(tok, ldp_body(Wallet().proof(fresh_nonce()))).json()["credential"]

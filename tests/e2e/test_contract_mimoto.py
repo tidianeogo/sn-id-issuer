@@ -126,7 +126,7 @@ def test_affichage_des_champs_par_mimoto(locale):
     fields = [k for k in STATE["vc"]["credentialSubject"] if k != "id"]
     for k in fields:
         assert any(d["locale"] == locale and d["name"] for d in subj[k]["display"]), k
-        assert k in cfg["order"], k
+        assert k in cfg["order"] or k == "face", k   # photo : portrait, hors liste des champs
 
 
 def test_vc_de_mimoto_journalise():
@@ -143,3 +143,20 @@ def test_cle_p12_de_mimoto_lisible():
     k = pkcs12.load_pkcs12(p12.read_bytes(), ENV.get("MIMOTO_P12_PASSWORD", "dummypassword").encode())
     assert k.key is not None and k.cert is not None
     assert k.cert.friendly_name.decode() == ENV.get("MIMOTO_CLIENT_ALIAS", "sn-cni-mimoto-client")
+
+
+def test_json_en_ascii_pour_mimoto():
+    """Mimoto (RestTemplate) décode un « application/json » sans charset en ISO-8859-1 : les réponses de l'issuer
+    sont en ASCII pur (accents échappés \\u00e9) avec charset=utf-8, et la photo n'est pas listée comme champ texte."""
+    import json as _json
+    import requests as _rq
+    from conftest import ISSUER
+    r = _rq.get(f"{ISSUER}/.well-known/openid-credential-issuer")
+    assert "charset=utf-8" in r.headers["content-type"]
+    r.content.decode("ascii")                                   # aucun octet non ASCII
+    meta = _json.loads(r.content)
+    cfg = meta["credential_configurations_supported"][CONFIG_ID]
+    assert cfg["display"][0]["name"] == "Carte d'identité CEDEAO – Sénégal"   # accents intacts après décodage
+    assert "face" not in cfg["order"] and "face" in cfg["credential_definition"]["credentialSubject"]
+    tpl = (ROOT / "inji" / "mimoto-issuers-config.template.json").read_bytes()
+    tpl.decode("ascii")

@@ -71,7 +71,9 @@ def credential_configuration() -> dict:
             },
         },
         "display": [display("Carte d'identité CEDEAO – Sénégal", "fr"), display("ECOWAS Identity Card – Senegal", "en")],
-        "order": [k for k, _, _ in FIELDS],
+        # « face » reste déclaré (Mimoto, PDF) mais hors de « order » : Inji Wallet affiche alors la photo en
+        # portrait au lieu d'imprimer sa valeur base64 dans la liste des champs
+        "order": [k for k, _, _ in FIELDS if k != "face"],
     }
 
 

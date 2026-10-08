@@ -1,0 +1,15 @@
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "key_ops": [
+        "verify"
+      ],
+      "n": "j7HL4gZAghF5Ci7MKeebjT0fK9Wy_YRbEPNEOirZqSf0z7vVnMXlTDpwFsu22TCAPlZKQR38JwvVyo3e8BzXekGSqT9FI32PGbwSXnwPo-o1Z1rWAnIufuG_OwVq0KlW08qtc6D3zv5SzYuiQGB8XNC__n1qydEiYQsAOgya9l6kYMjTxpuJO2ZMFDFny48zXHlPb_ddshDwfOtyn4OUt3ekZudG2g_lA9Fp1nXtGSgXh8izyURD0JDXWY9qYSIvAzaJCRagpchQ8ohR7lyN5IDCSs5WTCQnMTpuN1qMxv8tASSfkcwSw-ZZ2N63Jy13vnGbo_X7gUxloA4zciA5qw",
+      "e": "AQAB",
+      "use": "sig",
+      "alg": "RS256",
+      "kid": "sn-cni-mimoto-client"
+    }
+  ]
+}

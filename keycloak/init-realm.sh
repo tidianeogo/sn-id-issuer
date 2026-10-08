@@ -105,4 +105,36 @@ fi
 $KC update "clients/$WID" -r "$R" -s "redirectUris=$(json_array "$WALLET_REDIRECT_URIS")" \
   -s 'attributes."pkce.code.challenge.method"=S256'
 
+echo "==> Interface d'enrôlement : client public « ${ADMIN_UI_CLIENT_ID:=issuer-admin-ui} » (PKCE S256)"
+AID=$(client_id_of "$ADMIN_UI_CLIENT_ID")
+if [ -z "$AID" ]; then
+  AID=$($KC create clients -r "$R" -i -s clientId="$ADMIN_UI_CLIENT_ID" -s protocol=openid-connect \
+    -s name="Enrôlement des cartes (issuer)" -s publicClient=true -s standardFlowEnabled=true \
+    -s directAccessGrantsEnabled=false -s fullScopeAllowed=true)
+  $KC create "clients/$AID/protocol-mappers/models" -r "$R" -s name=issuer-audience \
+    -s protocol=openid-connect -s protocolMapper=oidc-audience-mapper \
+    -s "config.\"included.custom.audience\"=$ISSUER_AUDIENCE" \
+    -s 'config."access.token.claim"=true' -s 'config."id.token.claim"=false'
+fi
+ADMIN_UI_REDIRECTS="http://localhost:8088/admin/*,http://127.0.0.1:8088/admin/*"
+case "${PUBLIC_URL:-}" in http*://*) ADMIN_UI_REDIRECTS="${PUBLIC_URL%/}/admin/*,$ADMIN_UI_REDIRECTS";; esac
+$KC update "clients/$AID" -r "$R" -s "redirectUris=$(json_array "$ADMIN_UI_REDIRECTS")" -s 'webOrigins=["+"]' \
+  -s 'attributes."post.logout.redirect.uris"=+' \
+  -s 'attributes."pkce.code.challenge.method"=S256'
+
+if [ -n "${ISSUER_BACKEND_SECRET:-}" ]; then
+  echo "==> Compte de service « issuer-backend » (création des comptes des titulaires)"
+  BID=$(client_id_of issuer-backend)
+  if [ -z "$BID" ]; then
+    BID=$($KC create clients -r "$R" -i -s clientId=issuer-backend -s protocol=openid-connect \
+      -s publicClient=false -s standardFlowEnabled=false -s directAccessGrantsEnabled=false \
+      -s serviceAccountsEnabled=true)
+  fi
+  $KC update "clients/$BID" -r "$R" -s secret="$ISSUER_BACKEND_SECRET"
+  $KC add-roles -r "$R" --uusername service-account-issuer-backend --cclientid realm-management \
+    --rolename manage-users --rolename view-users --rolename query-users
+else
+  echo "    ISSUER_BACKEND_SECRET vide : enrôlement sans création automatique des comptes"
+fi
+
 echo "Keycloak configuré."

@@ -1,5 +1,4 @@
 """Issuer OpenID4VCI (draft 13 / compatible Inji-Mimoto) pour la carte d'identité CEDEAO du Sénégal."""
-import base64
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -8,9 +7,9 @@ from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import JSONResponse as _JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 from sqlalchemy import or_, select, text
 from sqlalchemy.orm import selectinload
 
@@ -20,11 +19,22 @@ from .config import get_settings
 from .credential import (CONFIG_ID, DataIntegrityError, build_credential, check_card_integrity,
                          credential_configuration)
 from .crypto import DID_V1, ED25519_2020_V1, key_store, sign_credential
-from .db import ElectoralRegistration, IdCard, IssuedCredential, Person, SessionLocal
-from .mrz import MRZError, consistency_errors, parse_td1
+from .db import IdCard, IssuedCredential, Person, SessionLocal
+from .enrolment import router as enrolment_router
 from .offer import credential_offer, offer_links, offer_page
 
 log = logging.getLogger("sn-id-issuer")
+
+
+class JSONResponse(_JSONResponse):
+    """JSON en ASCII pur (é -> \\u00e9) avec charset explicite : Mimoto (Spring RestTemplate) lit un
+    « application/json » sans charset en ISO-8859-1, ce qui transformait les accents en « Ã© » dans le wallet."""
+    media_type = "application/json; charset=utf-8"
+
+    def render(self, content) -> bytes:
+        import json
+        return json.dumps(content, ensure_ascii=True, allow_nan=False, separators=(",", ":")).encode("ascii")
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 APP_DIR = Path(__file__).parent
 
@@ -32,12 +42,17 @@ APP_DIR = Path(__file__).parent
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     key_store.load_or_create()
+    # préchargement des modèles OCR en tâche de fond (le premier « Lire la carte » n'attend pas)
+    import threading
+    from .ocr import warm_up
+    threading.Thread(target=warm_up, daemon=True).start()
     s = get_settings()
     log.info("Issuer prêt — DID %s — base %s", s.did, s.base)
     yield
 
 
-app = FastAPI(title="Issuer CNI CEDEAO Sénégal (Inji / OID4VCI)", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="Issuer CNI CEDEAO Sénégal (Inji / OID4VCI)", version="3.6.1", lifespan=lifespan,
+              default_response_class=JSONResponse)
 app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 
 
@@ -169,89 +184,7 @@ def credential_endpoint(req: dict = Body(...), claims: dict = Depends(validate_a
 
 
 # ------------------------------------------------------------------ administration (rôle Keycloak issuer-admin)
-class ElectoralIn(BaseModel):
-    voter_number: str
-    region: str | None = None
-    department: str | None = None
-    arrondissement: str | None = None
-    commune: str | None = None
-    polling_place: str | None = None
-    polling_station: str | None = None
-
-
-class CitizenIn(BaseModel):
-    nin: str
-    card_number: str = Field(description="N° de carte (espaces autorisés)")
-    given_name: str
-    family_name: str
-    date_of_birth: date
-    place_of_birth: str | None = None
-    sex: str = Field(pattern="^[MF]$")
-    height_cm: int | None = None
-    nationality: str = "SEN"
-    address: str | None = None
-    date_of_issue: date
-    date_of_expiry: date
-    registration_center: str | None = None
-    mrz: list[str] = Field(min_length=3, max_length=3, description="Les 3 lignes de la MRZ du verso")
-    electoral: ElectoralIn | None = None
-    photo_jpeg_base64: str | None = None
-
-
-def _citizen_out(p: Person) -> dict:
-    out = {k: getattr(p, k) for k in ("nin", "given_name", "family_name", "date_of_birth", "place_of_birth", "sex",
-                                      "height_cm", "nationality", "address", "status")}
-    out["has_photo"] = p.photo_jpeg is not None
-    out["cards"] = [{k: getattr(c, k) for k in ("card_number", "date_of_issue", "date_of_expiry",
-                                                "registration_center", "status")} for c in p.cards]
-    e = p.electoral
-    out["electoral"] = None if e is None else {k: getattr(e, k) for k in (
-        "voter_number", "region", "department", "arrondissement", "commune", "polling_place", "polling_station")}
-    return out
-
-
-@app.get("/admin/citizens")
-def list_citizens(_=Depends(require_admin)):
-    with SessionLocal() as db:
-        q = select(Person).options(selectinload(Person.cards), selectinload(Person.electoral)).order_by(Person.family_name)
-        return [_citizen_out(p) for p in db.scalars(q)]
-
-
-@app.put("/admin/citizens")
-def upsert_citizen(body: CitizenIn, _=Depends(require_admin)):
-    nin, card_number = body.nin.replace(" ", ""), body.card_number.replace(" ", "")
-    try:
-        td1 = parse_td1(body.mrz)
-    except MRZError as e:
-        raise HTTPException(422, f"MRZ invalide : {e}")
-    errs = consistency_errors(td1, card_number=card_number, date_of_birth=body.date_of_birth,
-                              date_of_expiry=body.date_of_expiry, sex=body.sex,
-                              family_name=body.family_name, given_name=body.given_name)
-    if errs:
-        raise HTTPException(422, "MRZ incohérente avec le recto : " + ", ".join(errs))
-
-    with SessionLocal() as db:
-        p = db.get(Person, nin) or Person(nin=nin)
-        for k in ("given_name", "family_name", "date_of_birth", "place_of_birth", "sex", "height_cm",
-                  "nationality", "address"):
-            setattr(p, k, getattr(body, k))
-        if body.photo_jpeg_base64:
-            p.photo_jpeg = base64.b64decode(body.photo_jpeg_base64)
-        db.add(p)
-        db.flush()
-        c = db.get(IdCard, card_number) or IdCard(card_number=card_number, nin=nin)
-        c.nin, c.date_of_issue, c.date_of_expiry = nin, body.date_of_issue, body.date_of_expiry
-        c.registration_center = body.registration_center
-        c.mrz_line1, c.mrz_line2, c.mrz_line3 = td1.lines
-        db.add(c)
-        if body.electoral:
-            e = db.get(ElectoralRegistration, nin) or ElectoralRegistration(nin=nin)
-            for k, v in body.electoral.model_dump().items():
-                setattr(e, k, v)
-            db.add(e)
-        db.commit()
-        db.refresh(p)
-        return _citizen_out(p)
+app.include_router(enrolment_router)
 
 
 @app.get("/admin/credentials")

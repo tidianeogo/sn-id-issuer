@@ -18,6 +18,26 @@ envval() { grep -E "^$1=" .env | tail -1 | cut -d= -f2-; }
 setenv() {  # portable macOS / Linux (pas de sed -i)
   awk -v k="$1" -v v="$2" 'BEGIN{d=0} $0 ~ "^"k"=" {print k"="v; d=1; next} {print} END{if(!d) print k"="v}' .env > .env.tmp && mv .env.tmp .env
 }
+# Normalise une URL publique : espaces, guillemets, schéma répété (https://https://…), « / » final.
+# Affiche l'URL propre, ou échoue avec un message si elle reste invalide (gabarit <…> non remplacé, etc.).
+clean_url() {
+  local u="$1" scheme="https"
+  u=$(printf '%s' "$u" | tr -d ' \t\r"'"'")
+  case "$u" in http://*) scheme="http";; esac
+  while :; do case "$u" in https://*) u=${u#https://};; http://*) u=${u#http://};; *) break;; esac; done
+  u=${u%%/}; u=${u%%/}
+  if [ -z "$u" ] || ! printf '%s' "$u" | grep -Eq '^[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?$'; then
+    echo "URL publique invalide : « $1 »" >&2
+    echo "  attendu : https://<hôte>, par ex. https://mon-domaine.ngrok-free.dev" >&2
+    return 1
+  fi
+  printf '%s://%s' "$scheme" "$u"
+}
+# Domaine ngrok sans schéma ni « / » (NGROK_DOMAIN=https://x.ngrok-free.dev est accepté et corrigé)
+clean_domain() { local u; u=$(clean_url "$1") || return 1; u=${u#*://}; printf '%s' "${u%%/*}"; }
+
+# secret du compte de service d'enrôlement (absent des .env antérieurs à la v3.4)
+[ -n "$(envval ISSUER_BACKEND_SECRET)" ] || setenv ISSUER_BACKEND_SECRET "$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
 
 WITH_INJI=1; START=1
 for a in "$@"; do case "$a" in --no-inji) WITH_INJI=0;; --prepare-only) START=0;; esac; done
@@ -38,13 +58,19 @@ case "$TUNNEL" in
     ;;
   ngrok)
     PROFILES+=(--profile ngrok)
-    D=$(envval NGROK_DOMAIN); [ -n "$D" ] && [ -n "$(envval NGROK_AUTHTOKEN)" ] || { echo "NGROK_DOMAIN et NGROK_AUTHTOKEN requis dans .env"; exit 1; }
+    [ -n "$(envval NGROK_DOMAIN)" ] && [ -n "$(envval NGROK_AUTHTOKEN)" ] || { echo "NGROK_DOMAIN et NGROK_AUTHTOKEN requis dans .env"; exit 1; }
+    D=$(clean_domain "$(envval NGROK_DOMAIN)") || exit 1
+    [ "$D" = "$(envval NGROK_DOMAIN)" ] || { setenv NGROK_DOMAIN "$D"; echo "    NGROK_DOMAIN corrigé : $D"; }
     $COMPOSE --profile ngrok up -d gateway tunnel-ngrok
     URL="https://$D"
     ;;
   external)
-    URL=$(envval PUBLIC_URL)
+    # URL HTTPS fournie par votre propre tunnel / proxy (ex. ngrok lancé sur le Mac : ngrok http 8088)
+    RAW=$(envval PUBLIC_URL)
+    URL=$(clean_url "$RAW") || exit 1
+    [ "$URL" = "$RAW" ] || echo "    PUBLIC_URL corrigée : « $RAW » -> $URL"
     case "$URL" in https://*) ;; *) echo "TUNNEL=external exige PUBLIC_URL en https:// dans .env"; exit 1;; esac
+    case "$URL" in *localhost*|*127.0.0.1*) echo "TUNNEL=external : PUBLIC_URL doit être l'URL publique du tunnel, pas localhost"; exit 1;; esac
     ;;
   none)
     URL="http://localhost:8088"
@@ -122,5 +148,6 @@ Prêt.
   Inji Web (navigateur du Mac)              : http://localhost:3004
   Métadonnées de l'issuer                   : $URL/.well-known/openid-credential-issuer
   Console Keycloak (local uniquement)       : http://127.0.0.1:8080/auth/admin
+  Enrôlement de nouvelles cartes            : $URL/admin/   (compte issuer-admin)
   Compte citoyen                            : $(envval CITIZEN_USERNAME) / $(envval CITIZEN_PASSWORD)
 EOF

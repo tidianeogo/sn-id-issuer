@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     expected_audience: str = "sn-id-issuer"  # vide => audience non vérifiée
     identity_claim: str = "preferred_username"  # claim du jeton qui porte le n° de carte / NIN
     admin_role: str = "issuer-admin"
+    # Enrôlement : comptes des titulaires (API d'administration Keycloak, réseau interne)
+    realm: str = "senegal"
+    keycloak_internal_url: str = "http://keycloak:8080/auth"
+    issuer_backend_client_id: str = "issuer-backend"
+    issuer_backend_secret: str = ""
+    admin_ui_client_id: str = "issuer-admin-ui"   # client public (PKCE) de l'interface /admin/
 
     # OID4VCI
     credential_scope: str = "sn_national_id_vc"

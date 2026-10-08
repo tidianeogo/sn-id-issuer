@@ -1,6 +1,10 @@
 FROM python:3.12-slim
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 OMP_THREAD_LIMIT=1
 WORKDIR /srv
+# OCR des cartes (module d'enrôlement) : Tesseract + langue française ; le modèle MRZ est fourni dans app/ocr_data
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-fra \
+ && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 # Certificat d'autorité optionnel (proxy d'entreprise qui inspecte TLS), fourni comme secret de build :
 # il n'est jamais copié dans l'image.

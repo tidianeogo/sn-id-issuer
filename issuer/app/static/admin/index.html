@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enrôlement des cartes d'identité</title>
+<link rel="icon" href="/static/logo.png">
+<style>
+  :root {
+    --bg: #f5f6f4; --panel: #ffffff; --ink: #1c2321; --muted: #5d6a66; --line: #d9dfdc;
+    --accent: #00853f; --accent-ink: #ffffff; --warn-bg: #fff7d6; --warn: #7a5d00;
+    --err-bg: #fde8e8; --err: #b3261e; --ok-bg: #e5f4ea; --ok: #0b6b33; --focus: #fdef42;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #131816; --panel: #1b2220; --ink: #e8eeeb; --muted: #9aa8a3; --line: #2e3835;
+      --accent: #2fae66; --warn-bg: #3a3214; --warn: #f2d675; --err-bg: #3d1d1b; --err: #ff9c94;
+      --ok-bg: #173323; --ok: #8fe0ad; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: var(--panel);
+    border-bottom: 3px solid var(--accent); position: sticky; top: 0; z-index: 2; }
+  header img { width: 34px; height: 34px; }
+  header h1 { font-size: 17px; margin: 0; flex: 1; }
+  header .who { color: var(--muted); font-size: 13px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 18px; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 18px 0 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 14px; }
+  label { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--muted); }
+  label.req > span:first-child::after { content: " *"; color: var(--err); }
+  input, select, textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 9px; min-width: 0; }
+  input:focus, select:focus, textarea:focus, button:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+  .invalid input, .invalid select, .invalid textarea { border-color: var(--err); }
+  .fielderr { color: var(--err); font-size: 12px; }
+  .fielderr:empty { display: none; }
+  textarea.mrz { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 15px; letter-spacing: .08em;
+    width: 100%; text-transform: uppercase; resize: vertical; }
+  button { font: inherit; border-radius: 6px; padding: 8px 14px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button.small { padding: 4px 9px; font-size: 13px; }
+  button:disabled { opacity: .55; cursor: default; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .spacer { flex: 1; }
+  .msg { border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+  .msg.err { background: var(--err-bg); color: var(--err); }
+  .msg.warn { background: var(--warn-bg); color: var(--warn); }
+  .msg.ok { background: var(--ok-bg); color: var(--ok); }
+  .msg ul { margin: 4px 0 0 18px; padding: 0; }
+  .photo { display: flex; gap: 14px; align-items: flex-start; }
+  .photo img { width: 96px; height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  td .sub { color: var(--muted); font-size: 12px; }
+  .badge { display: inline-block; border-radius: 99px; padding: 1px 8px; font-size: 12px; background: var(--bg); border: 1px solid var(--line); }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+  .badge.err { background: var(--err-bg); color: var(--err); border-color: transparent; }
+  .badge.warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .secret { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 20px; letter-spacing: .06em;
+    background: var(--bg); border: 1px dashed var(--accent); border-radius: 8px; padding: 8px 12px; display: inline-block; }
+  .center { text-align: center; padding: 40px 10px; }
+  .hidden { display: none !important; }
+  .scan { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .drop { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    min-height: 150px; border: 2px dashed var(--line); border-radius: 10px; background: var(--bg); color: var(--muted);
+    cursor: pointer; text-align: center; padding: 10px; overflow: hidden; }
+  .drop.over { border-color: var(--accent); }
+  .drop.has { border-style: solid; border-color: var(--accent); }
+  .drop img { max-width: 100%; max-height: 170px; border-radius: 6px; }
+  .drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .drop b { color: var(--ink); }
+  .ocr-filled input, .ocr-filled select, .ocr-filled textarea { background: var(--warn-bg); }
+  .src { font-size: 11px; font-weight: 600; border-radius: 4px; padding: 0 5px; margin-left: 6px; vertical-align: 1px; }
+  .src.mrz { background: var(--ok-bg); color: var(--ok); }
+  .src.ocr { background: var(--warn-bg); color: var(--warn); }
+  .src.deduit { background: var(--err-bg); color: var(--err); }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent;
+    border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .tablewrap { overflow-x: auto; }
+  @media (max-width: 640px) { header h1 { font-size: 15px; } .hide-sm { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <img src="/static/logo.png" alt="">
+  <h1>Enrôlement des cartes d'identité CEDEAO – Sénégal</h1>
+  <span class="who" id="who"></span>
+  <button class="small hidden" id="logout">Déconnexion</button>
+</header>
+<main>
+  <section class="panel center" id="login-panel">
+    <p>Espace réservé aux agents disposant du rôle <b id="role-name">issuer-admin</b>.</p>
+    <button class="primary" id="login" disabled>Se connecter</button>
+    <div id="login-msg"></div>
+  </section>
+
+  <div id="app" class="hidden">
+    <section class="panel">
+      <div class="row">
+        <h2 style="margin:0">Titulaires enregistrés</h2>
+        <span class="spacer"></span>
+        <input id="search" type="search" placeholder="Rechercher (nom, NIN, n° de carte)" aria-label="Rechercher">
+        <button class="primary" id="new">+ Nouvelle carte</button>
+      </div>
+      <div id="list-msg"></div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Titulaire</th><th>NIN / carte</th><th class="hide-sm">Expiration</th><th>Statut</th><th>Compte</th><th></th></tr></thead>
+          <tbody id="rows"><tr><td colspan="6">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel hidden" id="form-panel">
+      <div class="row"><h2 style="margin:0" id="form-title">Nouvelle carte</h2><span class="spacer"></span>
+        <button class="small" id="cancel">Fermer</button></div>
+      <form id="form" novalidate autocomplete="off">
+        <h3>1. Photos de la carte — lecture automatique</h3>
+        <div class="scan">
+          <label class="drop" id="drop-recto"><span><b>Recto</b> (photo du titulaire)</span>
+            <span>Glissez une image ou cliquez — sur téléphone : appareil photo</span>
+            <input type="file" accept="image/*" id="scan-recto"></label>
+          <label class="drop" id="drop-verso"><span><b>Verso</b> (avec les 3 lignes MRZ)</span>
+            <span>Glissez une image ou cliquez — sur téléphone : appareil photo</span>
+            <input type="file" accept="image/*" id="scan-verso"></label>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button type="button" class="primary" id="ocr" disabled>Lire la carte</button>
+          <span style="color:var(--muted);font-size:13px">Carte entière, à plat, bien éclairée, sans reflet. Traitement local : les images ne sont pas conservées.</span>
+        </div>
+        <div id="ocr-msg"></div>
+
+        <h3>2. Zone de lecture automatique (MRZ, au verso)</h3>
+        <label class="req" data-f="mrz"><span>Les 3 lignes de 30 caractères</span>
+          <textarea class="mrz" name="mrz" rows="3" spellcheck="false"
+            placeholder="I&lt;SEN105199003&lt;150007735&lt;&lt;&lt;&lt;&lt;&lt;&#10;9003152M3205013SEN&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;0&#10;NDIAYE&lt;&lt;MOUSSA&lt;IBRAHIMA&lt;&lt;&lt;&lt;&lt;&lt;&lt;"></textarea>
+          <span class="fielderr"></span></label>
+        <div class="row" style="margin-top:8px">
+          <button type="button" id="read-mrz">Lire la MRZ et pré-remplir</button>
+          <span class="sub" style="color:var(--muted);font-size:13px">Remplit n° de carte, nom, prénoms, sexe, dates de naissance et d'expiration.</span>
+        </div>
+
+        <h3>3. Recto</h3>
+        <div class="grid">
+          <label class="req" data-f="card_number"><span>N° de carte</span><input name="card_number" inputmode="numeric" placeholder="1 05 19900315 00077 3"><span class="fielderr"></span></label>
+          <label class="req" data-f="family_name"><span>Nom</span><input name="family_name"><span class="fielderr"></span></label>
+          <label class="req" data-f="given_name"><span>Prénoms</span><input name="given_name"><span class="fielderr"></span></label>
+          <label class="req" data-f="date_of_birth"><span>Date de naissance</span><input name="date_of_birth" type="date"><span class="fielderr"></span></label>
+          <label data-f="place_of_birth"><span>Lieu de naissance</span><input name="place_of_birth"><span class="fielderr"></span></label>
+          <label class="req" data-f="sex"><span>Sexe</span><select name="sex"><option value="">—</option><option value="M">M</option><option value="F">F</option></select><span class="fielderr"></span></label>
+          <label data-f="height_cm"><span>Taille (cm)</span><input name="height_cm" type="number" min="50" max="250"><span class="fielderr"></span></label>
+          <label class="req" data-f="date_of_issue"><span>Date de délivrance</span><input name="date_of_issue" type="date"><span class="fielderr"></span></label>
+          <label class="req" data-f="date_of_expiry"><span>Date d'expiration</span><input name="date_of_expiry" type="date"><span class="fielderr"></span></label>
+          <label data-f="registration_center"><span>Centre d'enregistrement</span><input name="registration_center" placeholder="DAKAR-PLATEAU"><span class="fielderr"></span></label>
+          <label data-f="address" style="grid-column: span 2"><span>Adresse</span><input name="address"><span class="fielderr"></span></label>
+        </div>
+        <div class="photo" style="margin-top:12px" data-f="photo">
+          <img id="photo-preview" alt="Photo du titulaire">
+          <label><span>Photo (JPEG / PNG, recadrée et compressée automatiquement)</span>
+            <input type="file" id="photo" accept="image/*"><span class="fielderr"></span></label>
+        </div>
+
+        <h3>4. Verso</h3>
+        <div class="grid">
+          <label class="req" data-f="nin"><span>NIN</span><input name="nin" inputmode="numeric" placeholder="1 123 1990 00077"><span class="fielderr"></span></label>
+          <label data-f="voter_number"><span>N° d'électeur</span><input name="voter_number" inputmode="numeric"><span class="fielderr"></span></label>
+          <label><span>Région</span><input name="region"></label>
+          <label><span>Département</span><input name="department"></label>
+          <label><span>Arrondissement</span><input name="arrondissement"></label>
+          <label><span>Commune</span><input name="commune"></label>
+          <label><span>Lieu de vote</span><input name="polling_place"></label>
+          <label><span>Bureau de vote</span><input name="polling_station"></label>
+        </div>
+
+        <h3>5. Compte du titulaire</h3>
+        <label style="flex-direction:row;align-items:center;gap:8px;color:var(--ink)">
+          <input type="checkbox" name="create_account" checked> Créer son compte de connexion (identifiant = NIN, mot de passe temporaire)
+        </label>
+
+        <div id="form-msg"></div>
+        <div class="row" style="margin-top:14px">
+          <button type="button" id="check">Vérifier</button>
+          <button type="submit" class="primary" id="save">Enregistrer</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel hidden" id="result-panel">
+      <h2 id="result-title">Carte enregistrée</h2>
+      <div id="result"></div>
+      <div class="row" style="margin-top:12px"><button class="small" id="result-close">Fermer</button></div>
+    </section>
+  </div>
+</main>
+<script src="/admin/app.js"></script>
+</body>
+</html>

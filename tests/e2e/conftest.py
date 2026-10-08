@@ -136,8 +136,10 @@ def pkce() -> tuple[str, str]:
     return verifier, b64url(hashlib.sha256(verifier.encode()).digest())
 
 
-def keycloak_login(auth_url: str, username: str, password: str, redirect_uri: str) -> tuple[str | None, dict, str]:
-    """Ouvre l'URL d'autorisation, soumet le formulaire Keycloak. Renvoie (code, params_redirect, html_si_echec)."""
+def keycloak_login(auth_url: str, username: str, password: str, redirect_uri: str,
+                   new_password: str | None = None) -> tuple[str | None, dict, str]:
+    """Ouvre l'URL d'autorisation, soumet le formulaire Keycloak. Renvoie (code, params_redirect, html_si_echec).
+    new_password : réponse à l'écran « changer le mot de passe » (mot de passe temporaire d'un compte enrôlé)."""
     s = requests.Session()
     page = s.get(auth_url)
     page.raise_for_status()
@@ -147,6 +149,14 @@ def keycloak_login(auth_url: str, username: str, password: str, redirect_uri: st
     cookie = "; ".join(f"{c.name}={c.value}" for c in s.cookies)
     r = requests.post(html.unescape(m.group(1)), data={"username": username, "password": password, "credentialId": ""},
                       headers={"Cookie": cookie}, allow_redirects=False)
+    cookie = "; ".join([cookie] + [f"{c.name}={c.value}" for c in r.cookies])
+    if r.status_code == 302 and "/login-actions/required-action" in r.headers["Location"]:
+        r = requests.get(r.headers["Location"], headers={"Cookie": cookie}, allow_redirects=False)
+    upd = re.search(r'<form[^>]+id="kc-passwd-update-form"[^>]+action="([^"]+)"', r.text) if r.status_code == 200 else None
+    if upd and new_password:
+        r = requests.post(html.unescape(upd.group(1)), data={"password-new": new_password,
+                                                             "password-confirm": new_password},
+                          headers={"Cookie": cookie}, allow_redirects=False)
     if r.status_code != 302:
         return None, {}, r.text
     loc = urlparse(r.headers["Location"])
@@ -207,7 +217,7 @@ class MimotoLikeClient:
         asm = as_metadata(meta["authorization_servers"][0])
         return meta, asm
 
-    def authorize(self, username: str, password: str) -> tuple[str | None, str, str]:
+    def authorize(self, username: str, password: str, new_password: str | None = None) -> tuple[str | None, str, str]:
         """Requête d'autorisation construite comme Inji Web 0.17 (api.authorization)."""
         meta, asm = self.configuration()
         cfg = meta["credential_configurations_supported"][CONFIG_ID]
@@ -216,7 +226,7 @@ class MimotoLikeClient:
         url = (f"{asm['authorization_endpoint']}?response_type=code&client_id={MIMOTO_CLIENT}&scope={cfg['scope']}"
                f"&redirect_uri={INJI_WEB_REDIRECT}&state={state}&code_challenge={challenge}"
                f"&code_challenge_method=S256&ui_locales=fr")
-        code, q, page = keycloak_login(url, username, password, INJI_WEB_REDIRECT)
+        code, q, page = keycloak_login(url, username, password, INJI_WEB_REDIRECT, new_password)
         if code:
             assert q["state"] == state
         return code, verifier, page

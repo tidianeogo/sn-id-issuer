@@ -14,6 +14,9 @@ export COMPOSE
 MODE=base; [ "${1:-}" = "--inji" ] && { MODE=inji; shift; }
 [ -f .env ] || cp .env.example .env
 envval() { grep -E "^$1=" .env | tail -1 | cut -d= -f2-; }
+if [ -z "$(envval ISSUER_BACKEND_SECRET)" ]; then   # .env antérieur à la v3.4
+  printf '\nISSUER_BACKEND_SECRET=%s\n' "$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)" >> .env
+fi
 
 echo "==> Dépendances de test"
 python3 -m pip install -q -r tests/requirements.txt 2>/dev/null || python3 -m pip install -q --break-system-packages -r tests/requirements.txt
