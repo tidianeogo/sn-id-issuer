@@ -1,0 +1,35 @@
+{
+  "issuers": [
+    {
+      "issuer_id": "SenegalCNI",
+      "credential_issuer": "SenegalCNI",
+      "protocol": "OpenId4VCI",
+      "display": [
+        {
+          "name": "Carte d'identité CEDEAO – Sénégal (démo)",
+          "logo": { "url": "__PUBLIC_URL__/static/logo.png", "alt_text": "Sénégal" },
+          "title": "Carte d'identité CEDEAO",
+          "description": "Téléchargez votre carte d'identité numérique",
+          "language": "fr"
+        },
+        {
+          "name": "ECOWAS Identity Card – Senegal (demo)",
+          "logo": { "url": "__PUBLIC_URL__/static/logo.png", "alt_text": "Senegal" },
+          "title": "ECOWAS Identity Card",
+          "description": "Download your digital identity card",
+          "language": "en"
+        }
+      ],
+      "client_id": "__MIMOTO_CLIENT_ID__",
+      "client_alias": "__MIMOTO_CLIENT_ALIAS__",
+      "wellknown_endpoint": "__PUBLIC_URL__/.well-known/openid-credential-issuer",
+      "credential_issuer_host": "__PUBLIC_URL__",
+      "redirect_uri": "io.mosip.residentapp.inji://oauthredirect",
+      "authorization_audience": "__PUBLIC_URL__/auth/realms/__REALM__/protocol/openid-connect/token",
+      "proxy_token_endpoint": "__PUBLIC_URL__/auth/realms/__REALM__/protocol/openid-connect/token",
+      "token_endpoint": "__PUBLIC_URL__/v1/mimoto/get-token/SenegalCNI",
+      "qr_code_type": "OnlineSharing",
+      "enabled": "true"
+    }
+  ]
+}

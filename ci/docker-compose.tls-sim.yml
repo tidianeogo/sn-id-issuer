@@ -1,0 +1,13 @@
+# Chemins relatifs à la racine du projet (premier fichier compose).
+# CI uniquement : simule le tunnel HTTPS (URL publique https://sn-id.test:8443, à déclarer dans /etc/hosts).
+#   ci/tls-sim/gen-certs.sh
+#   PUBLIC_URL=https://sn-id.test:8443 docker compose -f docker-compose.yml -f ci/docker-compose.tls-sim.yml up -d
+services:
+  tunnel-sim:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./ci/tls-sim/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ci/tls-sim/certs:/certs:ro
+    ports:
+      - "8443:8443"
+    depends_on: [gateway]

@@ -1,0 +1,24 @@
+# Surcharge pour environnements à sortie Internet restreinte (CI, poste derrière proxy) :
+#  - la construction de l'image issuer passe par le réseau de l'hôte pour joindre PyPI ;
+#  - EXTRA_CA_FILE (optionnel) : AC du proxy qui inspecte TLS, passée en secret de build ;
+#  - keycloak-init avec un PATH réduit (bash + dépendances de kcadm.sh), fidèle à l'image officielle
+#    Keycloak (UBI micro) qui ne contient ni awk, ni grep, ni head, ni tr, ni sed.
+#   EXTRA_CA_FILE=/chemin/ca.crt docker compose -f docker-compose.yml -f ci/docker-compose.ci.yml up -d --build
+services:
+  issuer:
+    build:
+      network: host
+      secrets: [extra_ca]
+
+  keycloak-init:
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        mkdir -p /tmp/minbin
+        for c in bash uname readlink dirname java; do ln -sf "$$(command -v $$c)" /tmp/minbin/$$c; done
+        PATH=/tmp/minbin exec bash /init/init-realm.sh
+
+secrets:
+  extra_ca:
+    file: ${EXTRA_CA_FILE:-/dev/null}

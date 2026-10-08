@@ -1,0 +1,220 @@
+# Pile de base : postgres, keycloak, keycloak-init, issuer, gateway  (toujours démarrés)
+# Profils      : inji        -> Mimoto 0.22 + Inji Web 0.17 (+ datashare, minio, base Mimoto)
+#                cloudflared -> tunnel HTTPS éphémère (*.trycloudflare.com)
+#                ngrok       -> tunnel HTTPS à domaine fixe (NGROK_DOMAIN)
+# Nom de projet : COMPOSE_PROJECT_NAME (.env) — pas de clé « name: » pour rester compatible avec Compose < 2.3.
+# Démarrage recommandé : ./scripts/inji-up.sh   (choisit l'URL publique et rend la configuration Mimoto)
+
+x-mosip-platform: &mosip_platform
+  platform: linux/amd64     # images MOSIP publiées pour amd64 : émulées (Rosetta) sur Mac Apple Silicon
+
+services:
+  # ------------------------------------------------------------------ base
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: issuer
+      POSTGRES_USER: issuer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_DB_NAME: keycloak
+      KC_DB_USER: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # -h 127.0.0.1 : pendant l'initialisation (scripts db/), le serveur temporaire n'écoute que sur le
+      # socket Unix ; tester en TCP évite de déclarer la base prête avant la fin de l'init.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U issuer -d issuer"]
+      interval: 5s
+      retries: 20
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev
+    restart: unless-stopped
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KC_HTTP_RELATIVE_PATH: /auth                 # Keycloak servi sous <URL publique>/auth
+      KC_HTTP_MANAGEMENT_RELATIVE_PATH: /          # santé sur :9000/health/ready
+      KC_HOSTNAME: ${PUBLIC_URL}/auth
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"      # l'issuer joint Keycloak en interne (http://keycloak:8080)
+      KC_PROXY_HEADERS: xforwarded                 # derrière la passerelle / le tunnel HTTPS
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
+    ports:
+      - "127.0.0.1:8080:8080"                      # console d'administration : en local uniquement
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      # bash pur (l'image officielle n'a pas curl, et on ne suppose ni grep ni awk)
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && while IFS= read -r l <&3; do [[ $$l == *UP* ]] && exit 0; done; exit 1"]
+      interval: 10s
+      retries: 30
+
+  keycloak-init:
+    image: quay.io/keycloak/keycloak:26.0
+    entrypoint: ["/bin/bash", "/init/init-realm.sh"]
+    environment:
+      LANG: C.UTF-8               # arguments accentués de kcadm (displayName…) transmis en UTF-8
+      KC_URL: http://keycloak:8080/auth
+      KC_ADMIN: ${KC_ADMIN}
+      KC_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
+      REALM: ${REALM}
+      SSL_REQUIRED: ${SSL_REQUIRED:-external}
+      CREDENTIAL_SCOPE: sn_national_id_vc
+      ISSUER_AUDIENCE: sn-id-issuer
+      MIMOTO_CLIENT_ID: ${MIMOTO_CLIENT_ID}
+      MIMOTO_REDIRECT_URIS: ${MIMOTO_REDIRECT_URIS}
+      MIMOTO_JWKS: ${MIMOTO_JWKS:-}
+      WALLET_CLIENT_ID: ${WALLET_CLIENT_ID}
+      WALLET_REDIRECT_URIS: ${WALLET_REDIRECT_URIS}
+      TEST_CLIENT_SECRET: ${TEST_CLIENT_SECRET}
+      ISSUER_ADMIN_PASSWORD: ${ISSUER_ADMIN_PASSWORD}
+      CITIZEN_USERNAME: ${CITIZEN_USERNAME}
+      CITIZEN_PASSWORD: ${CITIZEN_PASSWORD}
+    volumes:
+      - ./keycloak:/init:ro
+      - ./inji/certs:/inji-certs:ro
+    depends_on:
+      keycloak: {condition: service_healthy}
+    restart: "no"
+
+  issuer:
+    build: ./issuer
+    restart: unless-stopped
+    environment:
+      PUBLIC_BASE_URL: ${PUBLIC_URL}
+      DATABASE_URL: postgresql+psycopg://issuer:${POSTGRES_PASSWORD}@postgres:5432/issuer
+      ISSUER_KEY_PASSPHRASE: ${ISSUER_KEY_PASSPHRASE}
+      KEYCLOAK_PUBLIC_ISSUER: ${PUBLIC_URL}/auth/realms/${REALM}
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/auth/realms/${REALM}/protocol/openid-connect/certs
+      EXPECTED_AUDIENCE: sn-id-issuer
+      IDENTITY_CLAIM: preferred_username
+      CREDENTIAL_SCOPE: sn_national_id_vc
+      REQUIRE_NONCE: ${REQUIRE_NONCE}   # garder false : Keycloak ne renvoie pas de c_nonce (Mimoto, Inji Wallet)
+    depends_on:
+      postgres: {condition: service_healthy}
+      keycloak: {condition: service_healthy}
+
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - ./gateway/default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8088:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/gateway-health || exit 1"]
+      interval: 5s
+      retries: 20
+
+  # ------------------------------------------------------------------ tunnels HTTPS (un seul à la fois)
+  tunnel-cloudflared:
+    profiles: [cloudflared]
+    image: cloudflare/cloudflared:2025.4.0
+    command: tunnel --no-autoupdate --url http://gateway:80
+    restart: unless-stopped
+    depends_on: [gateway]
+
+  tunnel-ngrok:
+    profiles: [ngrok]
+    image: ngrok/ngrok:3
+    command: http gateway:80 --url=${NGROK_DOMAIN:-} --log stdout
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    restart: unless-stopped
+    depends_on: [gateway]
+
+  # ------------------------------------------------------------------ Inji : Mimoto 0.22 + Inji Web 0.17
+  # (composition issue de mosip/inji-web docker-compose, branche master ; noms de services conservés
+  #  car codés en dur dans la configuration : inji-web, mimoto-service, datashare-service, minio-service)
+  minio-service:
+    <<: *mosip_platform
+    profiles: [inji]
+    image: mosipint/minio:2022.2.7-debian-10-r0
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+
+  datashare-service:
+    <<: *mosip_platform
+    profiles: [inji]
+    image: mosipid/data-share-service:1.3.0-beta.2
+    environment:
+      - active_profile_env=inji-default,standalone
+      - SPRING_CONFIG_NAME=data-share
+      - SPRING_CONFIG_LOCATION=/home/mosip/
+      - DATASHARE_DOMAIN=datashare-service:8097
+    volumes:
+      - ./inji/config/data-share-inji-default.properties:/home/mosip/data-share-inji-default.properties:ro
+      - ./inji/config/data-share-standalone.properties:/home/mosip/data-share-standalone.properties:ro
+    depends_on: [minio-service]
+
+  postgres-mimoto:
+    profiles: [inji]
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${MIMOTO_DB_PASSWORD}
+    volumes:
+      - mimoto-pgdata:/var/lib/postgresql/data
+      - ./inji/mimoto_init.sql:/docker-entrypoint-initdb.d/mimoto_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d inji_mimoto"]
+      interval: 5s
+      retries: 30
+
+  mimoto-service:
+    <<: *mosip_platform
+    profiles: [inji]
+    image: injistack/mimoto:0.22.0
+    user: root
+    restart: unless-stopped
+    environment:
+      - container_user=mosip
+      - active_profile_env=default
+      - SPRING_CONFIG_NAME=mimoto
+      - SPRING_CONFIG_LOCATION=/home/mosip/
+      - SPRING_CLOUD_BOOTSTRAP_LOCATION=/home/mosip/mimoto-bootstrap.properties
+      - oidc_p12_password=${MIMOTO_P12_PASSWORD}
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-mimoto:5432/inji_mimoto
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${MIMOTO_DB_PASSWORD}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-clientId}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-clientSecret}
+    volumes:
+      - ./inji/config/mimoto-default.properties:/home/mosip/mimoto-default.properties:ro
+      - ./inji/config/mimoto-bootstrap.properties:/home/mosip/mimoto-bootstrap.properties:ro
+      - ./inji/certs/oidckeystore.p12:/home/mosip/certs/oidckeystore.p12   # Mimoto y ajoute ses clés
+    depends_on:
+      postgres-mimoto: {condition: service_healthy}
+      datashare-service: {condition: service_started}
+      inji-web: {condition: service_started}
+      issuer: {condition: service_healthy}
+      keycloak-init: {condition: service_completed_successfully}
+
+  inji-web:
+    <<: *mosip_platform
+    profiles: [inji]
+    image: injistack/inji-web:0.17.0
+    restart: unless-stopped
+    ports:
+      - "3004:3004"
+    environment:
+      - DEFAULT_LANG=fr
+      - MIMOTO_URL=http://localhost:3004/v1/mimoto
+      - IGNORED_ISSUER_IDS=MockMdl
+    volumes:
+      - ./inji/config/mimoto-issuers-config.json:/home/mosip/mimoto-issuers-config.json:ro
+      - ./inji/config/mimoto-trusted-verifiers.json:/home/mosip/mimoto-trusted-verifiers.json:ro
+      - ./inji/config/credential-template.html:/home/mosip/credential-template.html:ro
+
+volumes:
+  pgdata:
+  mimoto-pgdata:

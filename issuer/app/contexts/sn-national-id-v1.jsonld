@@ -1,0 +1,33 @@
+{
+  "@context": {
+    "@version": 1.1,
+    "@protected": true,
+    "snid": "urn:sn-national-id:vocab#",
+    "SenegalNationalIDCredential": "snid:SenegalNationalIDCredential",
+    "nin": "snid:nin",
+    "cardNumber": "snid:cardNumber",
+    "givenName": "snid:givenName",
+    "familyName": "snid:familyName",
+    "fullName": "snid:fullName",
+    "dateOfBirth": "snid:dateOfBirth",
+    "placeOfBirth": "snid:placeOfBirth",
+    "gender": "snid:gender",
+    "height": "snid:height",
+    "nationality": "snid:nationality",
+    "address": "snid:address",
+    "dateOfIssue": "snid:dateOfIssue",
+    "dateOfExpiry": "snid:dateOfExpiry",
+    "registrationCenter": "snid:registrationCenter",
+    "documentType": "snid:documentType",
+    "issuingCountry": "snid:issuingCountry",
+    "voterNumber": "snid:voterNumber",
+    "electoralRegion": "snid:electoralRegion",
+    "electoralDepartment": "snid:electoralDepartment",
+    "electoralArrondissement": "snid:electoralArrondissement",
+    "electoralCommune": "snid:electoralCommune",
+    "pollingPlace": "snid:pollingPlace",
+    "pollingStation": "snid:pollingStation",
+    "mrz": "snid:mrz",
+    "face": "snid:face"
+  }
+}
